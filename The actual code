@@ -1,0 +1,203 @@
+#I actually deleted the code by mistake so everyone fell free to tweak with preset parameters as you want cause the only change in code is the preset parameter
+#dp_chaos_min.py
+# Minimal double-pendulum θ1–θ2 chaos explorer
+# White = chaotic, Black = non-chaotic
+
+import sys, time, math
+import numpy as np
+import matplotlib
+# Use a light desktop backend when running as a script
+if __name__ == "__main__" and not ("ipykernel" in sys.modules):
+    try:
+        matplotlib.use("TkAgg")
+    except Exception:
+        pass
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+
+# -------- physics --------
+g = 9.81
+L1 = L2 = 1.0
+m1 = m2 = 1.0
+
+def _derivs(theta1, theta2, omega1, omega2):
+    dtheta1 = omega1
+    dtheta2 = omega2
+    delta = theta1 - theta2
+    den1 = (2*m1 + m2 - m2*np.cos(2*delta))
+    a1 = (-g*(2*m1+m2)*np.sin(theta1)
+          - m2*g*np.sin(theta1 - 2*theta2)
+          - 2*np.sin(delta)*m2*(omega2**2*L2 + omega1**2*L1*np.cos(delta))) / (L1*den1)
+    a2 = (2*np.sin(delta)*(omega1**2*L1*(m1+m2)
+          + g*(m1+m2)*np.cos(theta1)
+          + omega2**2*L2*m2*np.cos(delta))) / (L2*den1)
+    return dtheta1, dtheta2, a1, a2
+
+def _rk4_step(theta1, theta2, omega1, omega2, dt):
+    k1 = _derivs(theta1, theta2, omega1, omega2)
+    k2 = _derivs(theta1 + 0.5*dt*k1[0], theta2 + 0.5*dt*k1[1],
+                 omega1 + 0.5*dt*k1[2], omega2 + 0.5*dt*k1[3])
+    k3 = _derivs(theta1 + 0.5*dt*k2[0], theta2 + 0.5*dt*k2[1],
+                 omega1 + 0.5*dt*k2[2], omega2 + 0.5*dt*k2[3])
+    k4 = _derivs(theta1 + dt*k3[0], theta2 + dt*k3[1],
+                 omega1 + dt*k3[2], omega2 + dt*k3[3])
+
+    theta1_next = theta1 + (dt/6.0)*(k1[0] + 2*k2[0] + 2*k3[0] + k4[0])
+    theta2_next = theta2 + (dt/6.0)*(k1[1] + 2*k2[1] + 2*k3[1] + k4[1])
+    omega1_next = omega1 + (dt/6.0)*(k1[2] + 2*k2[2] + 2*k3[2] + k4[2])
+    omega2_next = omega2 + (dt/6.0)*(k1[3] + 2*k2[3] + 2*k3[3] + k4[3])
+    return theta1_next, theta2_next, omega1_next, omega2_next
+
+def _unwrap(prev, curr):
+    d = curr - prev
+    d = (d + np.pi) % (2*np.pi) - np.pi
+    return prev + d
+
+def _evolve(theta1_0, theta2_0, T, dt):
+    steps = int(T/dt)
+    theta1, theta2 = theta1_0, theta2_0
+    w1 = w2 = 0.0
+    th1_cont, th2_cont = theta1, theta2
+    for _ in range(steps):
+        t1n, t2n, w1n, w2n = _rk4_step(theta1, theta2, w1, w2, dt)
+        th1_cont = _unwrap(th1_cont, t1n)
+        th2_cont = _unwrap(th2_cont, t2n)
+        theta1, theta2, w1, w2 = t1n, t2n, w1n, w2n
+    return th1_cont, th2_cont, w1, w2
+
+def _is_chaotic(theta1_0, theta2_0, T, dt, eps, lambda_thr):
+    th1, th2, w1, w2 = _evolve(theta1_0, theta2_0, T, dt)
+    th1p, th2p, w1p, w2p = _evolve(theta1_0 + eps, theta2_0 + eps, T, dt)
+    d0 = np.sqrt(2.0)*eps
+    dT = np.sqrt((th1p-th1)**2 + (th2p-th2)**2 + (w1p-w1)**2 + (w2p-w2)**2) + 1e-15
+    lam = (1.0 / max(T, 1e-9)) * np.log(dT / d0)
+    return 1 if lam >= lambda_thr else 0
+
+def render_chaos(n, T, dt, x_min, x_max, y_min, y_max, lam_thr, eps=1e-6):
+    xs = np.linspace(x_min, x_max, n)
+    ys = np.linspace(y_min, y_max, n)
+    img = np.zeros((n, n), dtype=np.uint8)
+    for j, th2 in enumerate(ys):
+        for i, th1 in enumerate(xs):
+            img[j, i] = _is_chaotic(th1, th2, T, dt, eps, lam_thr)
+    return img
+
+# -------- presets (hidden, via keys 1/2/3) --------
+PRESETS = {
+    "1": dict(N=200, T=8.0,  dt=0.03, lam=0.06, name="Fast"),
+    "2": dict(N=400, T=8.0, dt=0.03, lam=0.06, name="Balanced"),
+    "3": dict(N=800, T=8.0, dt=0.03, lam=0.06, name="HighQ"),
+}
+current = PRESETS["2"].copy()
+
+# -------- figure (no widgets) --------
+rng0 = math.pi
+fig, ax = plt.subplots(figsize=(7.8, 7.6), dpi=110)
+ax.set_facecolor("black")
+im = ax.imshow(np.zeros((2,2), dtype=np.uint8),
+               origin="lower",
+               extent=[-rng0, rng0, -rng0, rng0],
+               interpolation="nearest",
+               aspect="equal",
+               cmap=ListedColormap(["#000000", "#FFFFFF"]),
+               vmin=0, vmax=1)
+ax.set_xlim(-rng0, rng0); ax.set_ylim(-rng0, rng0)
+ax.set_xlabel(r"$\theta_1$ (rad)", color="white")
+ax.set_ylabel(r"$\theta_2$ (rad)", color="white")
+for spine in ax.spines.values():
+    spine.set_color("#555")
+ax.tick_params(colors="#bbbbbb")
+title = ax.set_title("Chaos map (white = chaotic) — Balanced preset", color="white")
+
+# subtle status overlay
+status = ax.text(0.01, 0.01, "Ready. Scroll=zoom, drag=pan, R=render, S=save, 0=reset, 1/2/3=preset",
+                 color="#cccccc", transform=ax.transAxes, fontsize=8, ha="left", va="bottom",
+                 bbox=dict(boxstyle="round", facecolor=(0,0,0,0.5), edgecolor="none", pad=0.3))
+
+# -------- interactions: pan, zoom, keys --------
+_drag = {"on": False, "x0": None, "y0": None, "xlim0": None, "ylim0": None}
+
+def _render_view():
+    x_min, x_max = ax.get_xlim()
+    y_min, y_max = ax.get_ylim()
+    n, T, dt, lam = current["N"], current["T"], current["dt"], current["lam"]
+    t0 = time.time()
+    status.set_text("Rendering…")
+    fig.canvas.draw_idle()
+
+    img = render_chaos(n, T, dt, x_min, x_max, y_min, y_max, lam)
+    im.set_data(img)
+    im.set_extent([x_min, x_max, y_min, y_max])
+
+    took = time.time() - t0
+    title.set_text(f"Chaos map — {current['name']}  |  N={n}, T={T:.2f}, dt={dt:.4f}, λ={lam:.3f}")
+    status.set_text(f"Done in {took:.2f}s  |  window θ1:[{x_min:.2f},{x_max:.2f}] θ2:[{y_min:.2f},{y_max:.2f}]")
+    fig.canvas.draw_idle()
+
+def on_press(e):
+    if e.inaxes != ax or e.button != 1 or e.xdata is None:
+        return
+    _drag.update(on=True, x0=e.xdata, y0=e.ydata,
+                 xlim0=ax.get_xlim(), ylim0=ax.get_ylim())
+
+def on_release(e):
+    _drag["on"] = False
+
+def on_motion(e):
+    if not _drag["on"] or e.inaxes != ax or e.xdata is None:
+        return
+    dx = e.xdata - _drag["x0"]
+    dy = e.ydata - _drag["y0"]
+    (x0, x1) = _drag["xlim0"]
+    (y0, y1) = _drag["ylim0"]
+    ax.set_xlim(x0 - dx, x1 - dx)
+    ax.set_ylim(y0 - dy, y1 - dy)
+    fig.canvas.draw_idle()
+
+def on_scroll(e):
+    if e.inaxes != ax or e.xdata is None:
+        return
+    scale = 1/1.2 if e.button == "up" else 1.2
+    x_min, x_max = ax.get_xlim(); y_min, y_max = ax.get_ylim()
+    xdata, ydata = e.xdata, e.ydata
+    new_w = (x_max - x_min) * scale
+    new_h = (y_max - y_min) * scale
+    ax.set_xlim([xdata - (xdata - x_min)*new_w/(x_max - x_min),
+                 xdata + (x_max - xdata)*new_w/(x_max - x_min)])
+    ax.set_ylim([ydata - (ydata - y_min)*new_h/(y_max - y_min),
+                 ydata + (y_max - ydata)*new_h/(y_max - y_min)])
+    fig.canvas.draw_idle()
+
+def on_key(e):
+    if e.key in ("r", "R"):
+        _render_view()
+    elif e.key in ("s", "S"):
+        x_min, x_max = ax.get_xlim(); y_min, y_max = ax.get_ylim()
+        tag = current["name"].lower()
+        fname = f"chaos_{tag}_N{current['N']}_T{current['T']:.2f}_dt{current['dt']:.4f}_"
+        fname += f"x[{x_min:.2f},{x_max:.2f}]_y[{y_min:.2f},{y_max:.2f}].png"
+        fig.savefig(fname, dpi=300, bbox_inches='tight', facecolor=fig.get_facecolor())
+        status.set_text(f"Saved: {fname}")
+        fig.canvas.draw_idle()
+    elif e.key == "0":
+        ax.set_xlim(-rng0, rng0); ax.set_ylim(-rng0, rng0)
+        status.set_text("Reset view. Press R to render.")
+        fig.canvas.draw_idle()
+    elif e.key in ("1","2","3"):
+        # switch preset (no auto-render)
+        p = PRESETS[e.key].copy()
+        current.update(p)
+        title.set_text(f"Chaos map — {current['name']}  |  N={current['N']}, T={current['T']:.2f}, dt={current['dt']:.4f}, λ={current['lam']:.3f}")
+        status.set_text(f"Preset: {current['name']} selected. Press R to render.")
+        fig.canvas.draw_idle()
+
+cid1 = fig.canvas.mpl_connect("button_press_event", on_press)
+cid2 = fig.canvas.mpl_connect("button_release_event", on_release)
+cid3 = fig.canvas.mpl_connect("motion_notify_event", on_motion)
+cid4 = fig.canvas.mpl_connect("scroll_event", on_scroll)
+cid5 = fig.canvas.mpl_connect("key_press_event", on_key)
+
+# initial quick render (balanced)
+_render_view()
+plt.show()
