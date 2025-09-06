@@ -1,0 +1,29 @@
+Before explanation of code some important points:
+Black region in non chaotic
+White region in chaotic
+The masses and lengths between bobs and fixed point is taken as 1
+the gui is defaut python gui to minimize wastage of power on the gui instead of the desired output
+From line 88 to 93 there is a preset option though the presets are in low resolution you can imporve it however you want 
+The code does not give a fractal that is because of unwrap function that made the values greater or less than pi and -pi respectively to be in the range of [-pi,pi]
+N: resolution eg n =x => resoultion is x^2
+T: total simulation time 
+dt: small channge in time 
+All three are parameters which are variables
+The idea was taken from youtuber called 2swap please check him out he has done it very professionally
+
+
+
+
+Explanation of code:
+The code is made in python and physics in lagrangian machanics 
+angles are measured with verticle theta 1 and theta2 and in ccw dirn
+the mathamatics start 
+L = ke - pe
+d/dt (∂L/∂w) - ∂L/∂θ = 0
+from this we get angular accn of both 
+Then  with help of runge kutta method we approximate the integral of the values required
+Then we use the evolve funtion to accurately or near accurately predict what the posn of our system be since its very computational hevy doing it one by one for every system 
+then to deduce ​if it will be chaotic or not we use lyapunov exponent
+lamda = (1.0 / max(T, 1e-9)) * np.log(dT / d0)
+what this tell us is that if there are two system and we want to see if they are non chaotic psudo chaotic or chaotic we check if there lamda is near 0 there is still a bit stable but if it grows then its choatic 
+The rest is setting resoltuion Gui etc
