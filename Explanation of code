@@ -10,7 +10,7 @@ T: total simulation time
 dt: small channge in time 
 All three are parameters which are variables
 The idea was taken from youtuber called 2swap please check him out he has done it very professionally
-
+the main processor is runge kutaa and is chaotic fcn feel free to tweak with then to get different results
 
 
 
